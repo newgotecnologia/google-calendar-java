@@ -126,6 +126,10 @@ public class GoogleCalendar {
 
         } else {
             this.calendarModel = calendarService.calendars().insert(calendar()).execute();
+<<<<<<< HEAD
+=======
+            System.out.println(this.calendarModel);
+>>>>>>> be8536386b8e1080bded9036b2a2dd46ed21c1ff
         }
     }
 
