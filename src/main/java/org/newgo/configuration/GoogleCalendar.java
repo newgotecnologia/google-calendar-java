@@ -18,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.List;
@@ -130,12 +132,9 @@ public class GoogleCalendar {
     }
 
     private GoogleCredentials getCredentials() throws IOException {
-        InputStream in = GoogleCalendar.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
-        if (in == null) {
-            throw new FileNotFoundException("Resource not found: " + CREDENTIALS_FILE_PATH);
-        }
-
-        return GoogleCredentials.fromStream(in).createScoped(SCOPES)
+        return GoogleCredentials
+                .fromStream(Files.newInputStream(Paths.get(CREDENTIALS_FILE_PATH)))
+                .createScoped(SCOPES)
                 .createDelegated(EMAIL_SENDER);
     }
 
