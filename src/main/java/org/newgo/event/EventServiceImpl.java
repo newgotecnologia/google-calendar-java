@@ -5,17 +5,18 @@ import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
 import org.newgo.configuration.GoogleCalendar;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class EventServiceImpl implements EventService {
 
+    private static final Logger log = LoggerFactory.getLogger(EventServiceImpl.class);
     private final GoogleCalendar googleCalendar;
 
     public EventServiceImpl() throws GeneralSecurityException, IOException {
@@ -23,7 +24,7 @@ public class EventServiceImpl implements EventService {
     }
 
 
-    public Optional<EventDomain> processEvent(EventDomain eventDomain) throws GeneralSecurityException, IOException {
+    public Optional<EventDomain> processEvent(EventDomain eventDomain) {
         if (isEventCreatable(eventDomain)) {
             return Optional.of(createEvent(eventDomain));
         }
@@ -31,7 +32,7 @@ public class EventServiceImpl implements EventService {
         return Optional.empty();
     }
 
-    private void processEventUpdateOrDeletion(EventDomain eventDomain) throws GeneralSecurityException, IOException {
+    private void processEventUpdateOrDeletion(EventDomain eventDomain) {
         boolean isEventDeleted = eventDomain.isDeleted();
         boolean isEventIdEmpty = eventDomain.getId() == null || eventDomain.getId().isEmpty();
         boolean isEventCalendarIdEmpty = eventDomain.getCalendarId() == null || eventDomain.getCalendarId().isEmpty();
@@ -46,26 +47,37 @@ public class EventServiceImpl implements EventService {
     }
 
 
-    private EventDomain createEvent(EventDomain eventDomain) throws GeneralSecurityException, IOException {
+    private EventDomain createEvent(EventDomain eventDomain) {
         Event event = instantiateEvent(eventDomain);
 
-        Event eventCreated =
-                googleCalendar.getCalendar().events()
-                        .insert(googleCalendar.getCurrentCalendarId(), event)
-                        .execute();
+        try {
+            Event eventCreated =
+                    googleCalendar.getCalendar().events()
+                            .insert(googleCalendar.getCurrentCalendarId(), event)
+                            .execute();
+            eventDomain.setId(eventCreated.getId());
+            eventDomain.setCalendarId(this.googleCalendar.getCurrentCalendarId());
 
-        eventDomain.setId(eventCreated.getId());
-        eventDomain.setCalendarId(this.googleCalendar.getCurrentCalendarId());
+        } catch (GeneralSecurityException | IOException e) {
+            log.error("Erro ao criar evento para as agendas {}.\nCliente: {}\nMensagem da API: {}",
+                    eventDomain.getAttendees(), eventDomain.getTitle(), e.getMessage());
+        }
+
+
         return eventDomain;
     }
 
-    private void updateEvent(EventDomain eventDomain) throws GeneralSecurityException, IOException {
+    private void updateEvent(EventDomain eventDomain) {
         Event event = instantiateEvent(eventDomain);
 
-        if (findNonCancelledEvent(eventDomain.getId(), eventDomain.getCalendarId()).isPresent()) {
-            googleCalendar.getCalendar().events()
-                    .update(eventDomain.getCalendarId(), eventDomain.getId(), event)
-                    .execute();
+        try {
+            if (findNonCancelledEvent(eventDomain.getId(), eventDomain.getCalendarId()).isPresent()) {
+                googleCalendar.getCalendar().events()
+                        .update(eventDomain.getCalendarId(), eventDomain.getId(), event)
+                        .execute();
+            }
+        } catch (GeneralSecurityException | IOException e) {
+            log.error("Erro ao atualizar evento.\nMensagem da API: {}", e.getMessage());
         }
 
     }
@@ -84,15 +96,17 @@ public class EventServiceImpl implements EventService {
      * </ul>
      *
      * @param eventDomain the event domain object containing the event ID and calendar ID
-     * @throws GeneralSecurityException if there is a security-related error during the execution
-     * @throws IOException              if there is an input-output error during the execution
      */
-    private void cancelEvent(EventDomain eventDomain) throws GeneralSecurityException, IOException {
+    private void cancelEvent(EventDomain eventDomain) {
 
-        if (findNonCancelledEvent(eventDomain.getId(), eventDomain.getCalendarId()).isPresent()) {
-            googleCalendar.getCalendar().events()
-                    .delete(eventDomain.getCalendarId(), eventDomain.getId())
-                    .execute();
+        try {
+            if (findNonCancelledEvent(eventDomain.getId(), eventDomain.getCalendarId()).isPresent()) {
+                googleCalendar.getCalendar().events()
+                        .delete(eventDomain.getCalendarId(), eventDomain.getId())
+                        .execute();
+            }
+        } catch (GeneralSecurityException | IOException e) {
+            log.error("Erro ao cancelar evento da agenda. \nMensagem da API: {}", e.getMessage());
         }
 
     }
@@ -101,11 +115,15 @@ public class EventServiceImpl implements EventService {
         return event.getStatus().equalsIgnoreCase("cancelled");
     }
 
-    private Optional<Event> findNonCancelledEvent(String eventId, String calendarId) throws GeneralSecurityException, IOException {
-        Event event = googleCalendar.getCalendar().events().get(calendarId, eventId).execute();
+    private Optional<Event> findNonCancelledEvent(String eventId, String calendarId) {
+        try {
+            Event event = googleCalendar.getCalendar().events().get(calendarId, eventId).execute();
 
-        if (event != null && !isEventCancelled(event)) {
-            return Optional.of(event);
+            if (event != null && !isEventCancelled(event)) {
+                return Optional.of(event);
+            }
+        } catch (GeneralSecurityException | IOException e) {
+            log.error("Erro ao resgatar evento da agenda.\nMensagem da API: {}", e.getMessage());
         }
 
         return Optional.empty();
