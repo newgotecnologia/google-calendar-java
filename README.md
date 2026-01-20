@@ -30,7 +30,7 @@ Add this module as a dependency in your parent project's `pom.xml`:
 <dependency>
     <groupId>org.newgo</groupId>
     <artifactId>google-calendar</artifactId>
-    <version>1.1-1</version>
+    <version>1.1.1</version>
 </dependency>
 ```
 
