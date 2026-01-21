@@ -1,14 +1,11 @@
 package org.newgo.configuration;
 
 
-import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-
-
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
 import lombok.AccessLevel;
@@ -24,7 +21,6 @@ import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
-import java.util.Scanner;
 
 @Setter(AccessLevel.PRIVATE)
 public class GoogleCalendar {
@@ -40,7 +36,7 @@ public class GoogleCalendar {
     private static Calendar calendarService;
 
     @Getter(AccessLevel.PRIVATE)
-    private com.google.api.services.calendar.model.Calendar calendarModel;
+    private static com.google.api.services.calendar.model.Calendar calendarModel;
 
     private static final String ZONE_ID = "America/Sao_Paulo";
 
@@ -53,19 +49,25 @@ public class GoogleCalendar {
         loadProperties();
     }
 
-    public GoogleCalendar() throws GeneralSecurityException, IOException {
-        if (calendarService == null) {
-            final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-            calendarService = new Calendar.Builder(HTTP_TRANSPORT, JSON_FACTORY, new HttpCredentialsAdapter(getCredentials()))
-                    .setApplicationName(APPLICATION_NAME)
-                    .build();
+    public GoogleCalendar() {
+        try {
+                GoogleCredentials credentials = getCredentials();
 
-            setCalendarModel();
+                calendarService = new Calendar.Builder(
+                        GoogleNetHttpTransport.newTrustedTransport(),
+                        JSON_FACTORY,
+                        new HttpCredentialsAdapter(credentials))
+                        .setApplicationName(APPLICATION_NAME)
+                        .build();
+
+                initializeCalendarModel();
+        } catch (IOException | GeneralSecurityException | NullPointerException e) {
+            logger.error("Error trying to create Google Calendar Service...", e);
         }
     }
 
     public String getCurrentCalendarId() {
-        return this.calendarModel.getId();
+        return calendarModel.getId();
     }
 
     private static void loadProperties() {
@@ -92,42 +94,53 @@ public class GoogleCalendar {
         }
     }
 
+    /**
+     * Returns the environment variable value if the property is in the format ${ENV_VAR_NAME},
+     * otherwise returns the property value as-is.
+     *
+     * @param propertyValue the property value that may contain an environment variable reference
+     * @return the resolved value (from environment variable or the original value)
+     */
     private static String getEnvOrDefault(String propertyValue) {
-        if (propertyValue != null) {
-            return System.getenv(propertyValue);
+        if (propertyValue != null && propertyValue.startsWith("${") && propertyValue.endsWith("}")) {
+            String envVarName = propertyValue.substring(2, propertyValue.length() - 1);
+            String envValue = System.getenv(envVarName);
+            return envValue != null ? envValue : propertyValue;
         }
-        return null;
+        return propertyValue;
     }
 
     public Calendar getCalendar() throws IOException, GeneralSecurityException {
         return calendarService;
     }
 
-    private com.google.api.services.calendar.model.Calendar calendar() {
-        if (calendarModel == null) {
-            logger.info("Creating Google Calendar Model...");
-            com.google.api.services.calendar.model.Calendar calendar = new com.google.api.services.calendar.model.Calendar();
-            calendar.setSummary(APPLICATION_NAME);
-            calendar.setTimeZone(ZONE_ID);
-            calendar.setDescription("Qualisan Google Calendar");
-            setCalendarModel(calendar);
-        }
-
-        return getCalendarModel();
+    /**
+     * Creates a new Calendar model with default settings.
+     *
+     * @return a new Calendar model configured with application name, timezone, and description
+     */
+    private com.google.api.services.calendar.model.Calendar createDefaultCalendar() {
+        com.google.api.services.calendar.model.Calendar calendar = new com.google.api.services.calendar.model.Calendar();
+        calendar.setSummary(APPLICATION_NAME);
+        calendar.setTimeZone(ZONE_ID);
+        calendar.setDescription("Qualisan Google Calendar");
+        return calendar;
     }
 
-    private void setCalendarModel() throws IOException {
+    /**
+     * Initializes the calendar model by retrieving an existing calendar or creating a new one.
+     *
+     * @throws IOException if there is an error communicating with the Google Calendar API
+     */
+    private void initializeCalendarModel() throws IOException {
         List<com.google.api.services.calendar.model.CalendarListEntry> availableCalendars =
                 calendarService.calendarList().list().execute().getItems();
 
-
-        if (!availableCalendars.isEmpty()) {
-            this.calendarModel = calendarService.calendars()
+        if (availableCalendars != null && !availableCalendars.isEmpty()) {
+            calendarModel = calendarService.calendars()
                     .get(availableCalendars.get(0).getId()).execute();
-
-
         } else {
-            this.calendarModel = calendarService.calendars().insert(calendar()).execute();
+            calendarModel = calendarService.calendars().insert(createDefaultCalendar()).execute();
         }
     }
 
